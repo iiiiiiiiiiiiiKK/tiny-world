@@ -127,6 +127,68 @@ async function main() {
     record(`页面 ${path}`, await page.getByText(marker).first().isVisible(), marker);
   }
 
+  // ── 5b. 规格建筑存在 + 建筑旋转 ───────────────────────────
+  await page.goto(`${BASE}#/buildings`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(900);
+  const hasFactory = await page.getByText('工厂', { exact: true }).first().isVisible();
+  const hasLake = await page.getByText('湖泊', { exact: true }).first().isVisible();
+  record('规格建筑：工厂存在', hasFactory);
+  record('规格建筑：湖泊存在', hasLake);
+
+  // 提升等级与资源后测试旋转（商店 2×1 需 Lv.2）
+  await page.evaluate(async () => {
+    const req = indexedDB.open('tiny-world');
+    const dbo = await new Promise<any>((r) => (req.onsuccess = () => r(req.result)));
+    const tx = dbo.transaction(['meta'], 'readwrite');
+    tx.objectStore('meta').put({
+      id: 'profile',
+      value: {
+        id: 'me',
+        cityName: '生产验收之城',
+        createdAt: Date.now(),
+        xp: 400,
+        level: 3,
+        resources: { coins: 900, wood: 900, stone: 900 },
+        totalTasks: 0,
+        totalXp: 400,
+        totalCoins: 900,
+        streak: 0,
+        bestStreak: 0,
+        lastActiveDate: null,
+        randomEventDate: null,
+        randomEventCoinsToday: 0,
+      },
+    });
+    await new Promise<void>((r) => (tx.oncomplete = () => r()));
+    dbo.close();
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+  await page.goto(`${BASE}#/buildings`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(800);
+
+  await page.getByRole('button', { name: /商店/ }).first().click();
+  await page.getByRole('button', { name: '去建造' }).click();
+  await page.waitForTimeout(800);
+
+  const rotateChip = page.getByRole('button', { name: /旋转/ }).first();
+  const rotVisible = await rotateChip.isVisible();
+  record('放置模式出现旋转按钮', rotVisible);
+  if (rotVisible) {
+    await rotateChip.click();
+    await page.waitForTimeout(300);
+    const rot90 = await page.getByRole('button', { name: /旋转 90°/ }).first().isVisible();
+    record('旋转角度切换到 90°', rot90);
+
+    const cvs = page.locator('canvas').first();
+    const cbox = (await cvs.boundingBox())!;
+    await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2);
+    await page.waitForTimeout(1100);
+    const facing = await page.getByText('朝向').first().isVisible();
+    const deg90 = await page.getByText('90°').first().isVisible();
+    record('建造后建筑朝向为 90°', facing && deg90);
+  }
+
   // ── 6. 控制台无错误 ───────────────────────────────────────
   const realErrors = consoleErrors.filter(
     (e) => !e.includes('favicon') && !e.includes('React DevTools'),
