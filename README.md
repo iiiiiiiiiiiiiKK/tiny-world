@@ -229,8 +229,9 @@ npm run preview
 
 ```bash
 npm run test        # 单元 / 集成测试（Vitest，54 项）
-npm run test:e2e    # 端到端测试（Playwright，25 项 × 2 视口）
+npm run test:e2e    # 端到端测试（Playwright，13 场景 × 桌面 + iPhone 13 视口）
 npm run test:all    # 全部
+npm run verify:prod # 对线上站点做真实生产验收
 npm run lint        # 静态检查（oxlint）
 npm run build       # 类型检查 + 生产构建
 ```
@@ -261,6 +262,21 @@ npm run build       # 类型检查 + 生产构建
 - 分享页导出城市 PNG
 - 顶部 𝕏 作者链接指向 x.com/0xkillcoin
 - 移动端底部导航可见 + **无横向溢出**
+
+**生产环境验收（`npm run verify:prod`，对线上 GitHub Pages 站点执行，20 项全部通过）**
+
+| 验收项 | 结果 |
+| :--- | :--- |
+| 首页 HTTP 200 / 画布渲染 / 城市名 / 资源条 | ✅ |
+| 顶部 𝕏 作者链接正确 | ✅ |
+| 完成任务金币 80 → 90 | ✅ |
+| 刷新后金币保持（IndexedDB 真实持久化） | ✅ |
+| 同周期不可重复领取 | ✅ |
+| 建造 → 选中 → 升级 Lv.2 | ✅ |
+| 建造+升级木材 102 → 60（-42） | ✅ |
+| 统计 / 记录 / 设置 / 分享页渲染 | ✅ |
+| 无控制台错误 | ✅ |
+| 移动端导航 / 无横向溢出 / 画布渲染 | ✅ |
 
 ---
 
