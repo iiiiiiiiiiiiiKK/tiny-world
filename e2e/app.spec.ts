@@ -244,4 +244,120 @@ test.describe('Tiny World 端到端', () => {
     );
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test('建筑旋转：商店可从横向转为纵向朝向', async ({ page }) => {
+    await resetCity(page);
+    // 商店需要 Lv.2，先提升等级与资源，才能进入放置流程
+    await page.evaluate(async () => {
+      const req = indexedDB.open('tiny-world');
+      const dbo = await new Promise<any>((r) => (req.onsuccess = () => r(req.result)));
+      const tx = dbo.transaction(['meta'], 'readwrite');
+      tx.objectStore('meta').put({
+        id: 'profile',
+        value: {
+          id: 'me',
+          cityName: '旋转测试之城',
+          createdAt: Date.now(),
+          xp: 400,
+          level: 3,
+          resources: { coins: 900, wood: 900, stone: 900 },
+          totalTasks: 0,
+          totalXp: 400,
+          totalCoins: 900,
+          streak: 0,
+          bestStreak: 0,
+          lastActiveDate: null,
+          randomEventDate: null,
+          randomEventCoinsToday: 0,
+        },
+      });
+      await new Promise<void>((r) => (tx.oncomplete = () => r()));
+      dbo.close();
+    });
+    await page.reload();
+    await page.waitForTimeout(900);
+
+    await page.goto('/#/buildings');
+    await page.waitForTimeout(600);
+
+    await page.getByRole('button', { name: /商店/ }).first().click();
+    await page.getByRole('button', { name: '去建造' }).click();
+    await page.waitForTimeout(700);
+
+    // 放置模式下应出现旋转按钮
+    const rotateChip = page.getByRole('button', { name: /旋转/ }).first();
+    await expect(rotateChip).toBeVisible();
+    await rotateChip.click();
+    await expect(page.getByRole('button', { name: /旋转 90°/ })).toBeVisible();
+
+    const canvas = page.locator('canvas').first();
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(900);
+
+    // 建筑详情面板显示朝向 90°
+    await expect(page.getByText('朝向').first()).toBeVisible();
+    await expect(page.getByText('90°').first()).toBeVisible();
+  });
+
+  test('大量建筑下画布仍可响应（性能冒烟）', async ({ page }) => {
+    await resetCity(page);
+    // 直接注入 150 座建筑，模拟后期城市
+    await page.evaluate(async () => {
+      const req = indexedDB.open('tiny-world');
+      const dbo = await new Promise<any>((r) => (req.onsuccess = () => r(req.result)));
+      const tx = dbo.transaction(['buildings', 'meta'], 'readwrite');
+      const bstore = tx.objectStore('buildings');
+      const now = Date.now();
+      for (let i = 0; i < 150; i++) {
+        bstore.put({
+          id: `perf_${i}`,
+          typeId: i % 5 === 0 ? 'tree' : i % 5 === 1 ? 'cabin' : i % 5 === 2 ? 'road' : i % 5 === 3 ? 'lamp' : 'shrub',
+          x: i % 12,
+          y: Math.floor(i / 12) % 12,
+          level: 1,
+          placedAt: now,
+          variant: 0,
+          rotation: 0,
+        });
+      }
+      const mstore = tx.objectStore('meta');
+      mstore.put({
+        id: 'profile',
+        value: {
+          id: 'me',
+          cityName: '性能测试之城',
+          createdAt: now,
+          xp: 800,
+          level: 4,
+          resources: { coins: 500, wood: 500, stone: 500 },
+          totalTasks: 10,
+          totalXp: 800,
+          totalCoins: 500,
+          streak: 1,
+          bestStreak: 1,
+          lastActiveDate: null,
+          randomEventDate: null,
+          randomEventCoinsToday: 0,
+        },
+      });
+      await new Promise<void>((r) => (tx.oncomplete = () => r()));
+      dbo.close();
+    });
+    await page.reload();
+    await page.waitForTimeout(1200);
+
+    // 画布仍在，且渲染耗时在可接受范围
+    await expect(page.locator('canvas').first()).toBeVisible();
+    const t0 = Date.now();
+    await page.locator('canvas').first().click({ position: { x: 200, y: 200 } });
+    await page.waitForTimeout(200);
+    const elapsed = Date.now() - t0;
+    expect(elapsed).toBeLessThan(3000);
+
+    // 建筑数量在统计页可见
+    await page.goto('/#/statistics');
+    await page.waitForTimeout(600);
+    await expect(page.getByText('建筑构成').first()).toBeVisible();
+  });
 });

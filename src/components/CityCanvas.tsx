@@ -4,11 +4,14 @@ import { buildingType } from '../config/buildings';
 import { DISTRICT_THEMES } from '../config/palette';
 import { LEVELS } from '../config/economy';
 import {
+  type Rotation,
   TILE_H,
   TILE_W,
   buildingFootprint,
   canPlace,
+  canRotate,
   cellToScreen,
+  effectiveSize,
   screenToCell,
   tileCorners,
 } from '../lib/grid';
@@ -68,6 +71,22 @@ export default function CityCanvas({ onOpenShop }: Props) {
   >(null);
   const [dragging, setDragging] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  /**
+   * 放置时的旋转角度。用 typeId 一起存，切换到别的建筑时自然回到 0，
+   * 避免在 effect 里同步 setState。
+   */
+  const [placeRot, setPlaceRot] = useState<{ typeId: string | null; rot: Rotation }>({
+    typeId: null,
+    rot: 0,
+  });
+  const placingRotation: Rotation = placeRot.typeId === placingTypeId ? placeRot.rot : 0;
+  const setPlacingRotation = (next: Rotation | ((r: Rotation) => Rotation)) => {
+    setPlaceRot((prev) => {
+      const current = prev.typeId === placingTypeId ? prev.rot : 0;
+      const value = typeof next === 'function' ? next(current) : next;
+      return { typeId: placingTypeId, rot: value };
+    });
+  };
   const cameraRef = useRef(camera);
   useEffect(() => {
     cameraRef.current = camera;
@@ -192,7 +211,11 @@ export default function CityCanvas({ onOpenShop }: Props) {
       if (type) {
         for (let gx = 0; gx < extent; gx++) {
           for (let gy = 0; gy < extent; gy++) {
-            const ok = canPlace(buildings, { typeId: placingTypeId, x: gx, y: gy }, extent);
+            const ok = canPlace(
+              buildings,
+              { typeId: placingTypeId, x: gx, y: gy, rotation: placingRotation },
+              extent,
+            );
             const pts = tileCorners(gx, gy, originX, originY, cam.zoom);
             ctx.fillStyle = ok ? 'rgba(120, 230, 140, 0.18)' : 'rgba(230, 90, 80, 0.16)';
             ctx.beginPath();
@@ -210,14 +233,15 @@ export default function CityCanvas({ onOpenShop }: Props) {
     const sorted = [...buildings].sort((a, b) => {
       const ta = buildingType(a.typeId);
       const tb = buildingType(b.typeId);
-      const sa = ta ? ta.size.h : 1;
-      const sb = tb ? tb.size.h : 1;
+      const sa = ta ? effectiveSize(ta, a.rotation ?? 0).h : 1;
+      const sb = tb ? effectiveSize(tb, b.rotation ?? 0).h : 1;
       return a.y + a.x + sa * 0.001 - (b.y + b.x + sb * 0.001);
     });
 
     for (const b of sorted) {
       const type = buildingType(b.typeId);
       if (!type) continue;
+      const rotation = b.rotation ?? 0;
       const cells = buildingFootprint(b);
       const anchor = cells.reduce(
         (acc, c) => ({ x: acc.x + c.x, y: acc.y + c.y }),
@@ -226,7 +250,8 @@ export default function CityCanvas({ onOpenShop }: Props) {
       const gx = anchor.x / cells.length;
       const gy = anchor.y / cells.length;
       const pos = cellToScreen(gx, gy, originX, originY, cam.zoom);
-      const halfW = (TILE_W / 2) * cam.zoom * type.size.w;
+      const eff = effectiveSize(type, rotation);
+      const halfW = (TILE_W / 2) * cam.zoom * eff.w;
 
       const sc: SpriteContext = {
         ctx,
@@ -234,6 +259,8 @@ export default function CityCanvas({ onOpenShop }: Props) {
         originY: pos.y,
         scale: cam.zoom,
         variant: b.variant,
+        flipX: rotation === 1 || rotation === 2,
+        flipY: rotation === 2 || rotation === 3,
       };
 
       drawShadow(sc, halfW);
@@ -243,11 +270,13 @@ export default function CityCanvas({ onOpenShop }: Props) {
         ctx.save();
         ctx.strokeStyle = '#ffd85e';
         ctx.lineWidth = 2;
-        const pts = tileCorners(gx, gy, originX, originY, cam.zoom);
-        ctx.beginPath();
-        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-        ctx.closePath();
-        ctx.stroke();
+        for (const c of cells) {
+          const pts = tileCorners(c.x, c.y, originX, originY, cam.zoom);
+          ctx.beginPath();
+          pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+          ctx.closePath();
+          ctx.stroke();
+        }
         ctx.restore();
       }
 
@@ -255,9 +284,16 @@ export default function CityCanvas({ onOpenShop }: Props) {
 
       // 等级标记
       if (b.level > 1) {
-        px(sc, -3, -type.art.height - 8, 6, 5, 'rgba(40,40,50,0.75)');
+        const markSc: SpriteContext = {
+          ctx,
+          originX: pos.x,
+          originY: pos.y,
+          scale: cam.zoom,
+          variant: 0,
+        };
+        px(markSc, -3, -type.art.height - 8, 6, 5, 'rgba(40,40,50,0.75)');
         ctx.fillStyle = '#ffd85e';
-        ctx.font = 'bold 5px monospace';
+        ctx.font = `bold ${Math.max(5, Math.round(5 * cam.zoom))}px monospace`;
         ctx.textAlign = 'center';
         ctx.fillText(String(b.level), pos.x, pos.y + (-type.art.height - 8 + 5) * cam.zoom + 1);
       }
@@ -267,32 +303,60 @@ export default function CityCanvas({ onOpenShop }: Props) {
     if (placingTypeId && hoverCell) {
       const type = buildingType(placingTypeId);
       if (type) {
-        const ok = canPlace(buildings, { typeId: placingTypeId, x: hoverCell.x, y: hoverCell.y }, extent);
-        const pos = cellToScreen(hoverCell.x + type.size.w / 2 - 0.5, hoverCell.y + type.size.h / 2 - 0.5, originX, originY, cam.zoom);
+        const ok = canPlace(
+          buildings,
+          { typeId: placingTypeId, x: hoverCell.x, y: hoverCell.y, rotation: placingRotation },
+          extent,
+        );
+        const eff = effectiveSize(type, placingRotation);
+        const pos = cellToScreen(
+          hoverCell.x + eff.w / 2 - 0.5,
+          hoverCell.y + eff.h / 2 - 0.5,
+          originX,
+          originY,
+          cam.zoom,
+        );
         const sc: SpriteContext = {
           ctx,
           originX: pos.x,
           originY: pos.y,
           scale: cam.zoom,
           variant: 0,
+          flipX: placingRotation === 1 || placingRotation === 2,
+          flipY: placingRotation === 2 || placingRotation === 3,
         };
         ctx.save();
         ctx.globalAlpha = 0.6;
-        drawBuilding(sc, type.art, (TILE_W / 2) * cam.zoom * type.size.w);
+        drawBuilding(sc, type.art, (TILE_W / 2) * cam.zoom * eff.w);
         ctx.restore();
-        const pts = tileCorners(hoverCell.x, hoverCell.y, originX, originY, cam.zoom);
-        ctx.strokeStyle = ok ? '#6fe08a' : '#e05a50';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-        ctx.closePath();
-        ctx.stroke();
+        // 预览占地的全部格子
+        for (let dy = 0; dy < eff.h; dy++) {
+          for (let dx = 0; dx < eff.w; dx++) {
+            const pts = tileCorners(hoverCell.x + dx, hoverCell.y + dy, originX, originY, cam.zoom);
+            ctx.strokeStyle = ok ? '#6fe08a' : '#e05a50';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+            ctx.closePath();
+            ctx.stroke();
+          }
+        }
       }
     }
 
     void groundW;
     void groundH;
-  }, [buildings, camera, extent, hoverCell, placingTypeId, selectedBuildingId, showGrid, theme]);
+  }, [
+    buildings,
+    camera,
+    extent,
+    hoverCell,
+    placingTypeId,
+    placingRotation,
+    selectedBuildingId,
+    showGrid,
+    theme,
+  ]);
 
   /* ─────────────────── 交互 ─────────────────── */
   const localPoint = (e: React.PointerEvent | React.TouchEvent) => {
@@ -317,7 +381,11 @@ export default function CityCanvas({ onOpenShop }: Props) {
       const originY = origin.y;
 
       // 从上到下检测命中（后绘制的在上层）
-      const sorted = [...buildings].sort((a, b) => b.y + b.x - (a.y + a.x));
+      const sorted = [...buildings].sort(
+        (a, b) =>
+          b.y + b.x + effectiveSize(buildingType(b.typeId)!, b.rotation ?? 0).h * 0.001 -
+          (a.y + a.x + effectiveSize(buildingType(a.typeId)!, a.rotation ?? 0).h * 0.001),
+      );
       for (const b of sorted) {
         const type = buildingType(b.typeId);
         if (!type) continue;
@@ -326,8 +394,9 @@ export default function CityCanvas({ onOpenShop }: Props) {
         const gx = anchor.x / cells.length;
         const gy = anchor.y / cells.length;
         const pos = cellToScreen(gx, gy, originX, originY, cam.zoom);
-        const halfW = (TILE_W / 2) * cam.zoom * type.size.w;
-        const halfH = (TILE_H / 2) * cam.zoom * type.size.w;
+        const eff = effectiveSize(type, b.rotation ?? 0);
+        const halfW = (TILE_W / 2) * cam.zoom * eff.w;
+        const halfH = (TILE_H / 2) * cam.zoom * eff.w;
         const heightPx = type.art.height * cam.zoom;
         // 建筑包围盒（菱形底 + 高度）
         const inBox =
@@ -348,7 +417,7 @@ export default function CityCanvas({ onOpenShop }: Props) {
 
     if (placingTypeId) {
       const cell = screenToCell(p.x, p.y, ...thisOrigin());
-      void placeBuilding(placingTypeId, cell.x, cell.y).then((r) => {
+      void placeBuilding(placingTypeId, cell.x, cell.y, placingRotation).then((r) => {
         if (!r.ok) setToast(r.message, 'error');
         else {
           setToast(r.message, 'ok');
@@ -428,6 +497,26 @@ export default function CityCanvas({ onOpenShop }: Props) {
     setDragState(null);
     setDragging(false);
   };
+
+  // 键盘快捷键：Esc 取消放置，R 旋转
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!placingTypeId) return;
+      if (e.key === 'Escape') {
+        setPlacing(null);
+      } else if (e.key === 'r' || e.key === 'R') {
+        const t = buildingType(placingTypeId);
+        if (t && canRotate(t)) {
+          setPlaceRot((prev) => {
+            const current = prev.typeId === placingTypeId ? prev.rot : 0;
+            return { typeId: placingTypeId, rot: (((current + 1) % 4) as Rotation) };
+          });
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [placingTypeId, setPlacing]);
 
   // 滚轮缩放
   const onWheel = (e: React.WheelEvent) => {
@@ -528,11 +617,35 @@ export default function CityCanvas({ onOpenShop }: Props) {
         </button>
       </div>
 
-      {placingTypeId && (
-        <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-slate-900/85 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur">
-          放置模式 · 点击地面放置建筑（绿色可放 / 红色不可放）· 按 Esc 取消
-        </div>
-      )}
+      {placingTypeId && (() => {
+        const placingType = buildingType(placingTypeId);
+        const rotatable = placingType ? canRotate(placingType) : false;
+        return (
+          <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-900/85 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur">
+            <span className="hidden sm:inline">
+              点击地面放置（绿可放 / 红不可放）
+            </span>
+            <span className="sm:hidden">点击放置</span>
+            {rotatable && (
+              <button
+                type="button"
+                onClick={() => setPlacingRotation((r) => (((r + 1) % 4) as Rotation))}
+                className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold transition hover:bg-white/25 active:scale-95"
+                title="按 R 也可以旋转"
+              >
+                旋转 {placingRotation * 90}°
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPlacing(null)}
+              className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-bold transition hover:bg-white/25 active:scale-95"
+            >
+              取消
+            </button>
+          </div>
+        );
+      })()}
 
       {buildings.length === 0 && (
         <button

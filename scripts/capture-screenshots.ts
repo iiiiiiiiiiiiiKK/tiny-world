@@ -66,26 +66,30 @@ async function seedCity(page: any) {
     const store = tx.objectStore('buildings');
     const now = Date.now();
     const buildings = [
-      { id: 'b1', typeId: 'cabin', x: 3, y: 2, level: 2, placedAt: now, variant: 0 },
-      { id: 'b2', typeId: 'house', x: 4, y: 3, level: 1, placedAt: now, variant: 1 },
-      { id: 'b3', typeId: 'house', x: 2, y: 4, level: 3, placedAt: now, variant: 2 },
-      { id: 'b4', typeId: 'tree', x: 5, y: 2, level: 1, placedAt: now, variant: 0 },
-      { id: 'b5', typeId: 'tree', x: 1, y: 2, level: 1, placedAt: now, variant: 1 },
-      { id: 'b6', typeId: 'pine', x: 6, y: 5, level: 1, placedAt: now, variant: 0 },
-      { id: 'b7', typeId: 'road', x: 3, y: 5, level: 1, placedAt: now, variant: 0 },
-      { id: 'b8', typeId: 'road', x: 4, y: 5, level: 1, placedAt: now, variant: 0 },
-      { id: 'b9', typeId: 'road', x: 5, y: 5, level: 1, placedAt: now, variant: 0 },
-      { id: 'b10', typeId: 'lamp', x: 3, y: 6, level: 1, placedAt: now, variant: 0 },
-      { id: 'b11', typeId: 'shop', x: 5, y: 3, level: 2, placedAt: now, variant: 0 },
-      { id: 'b12', typeId: 'park', x: 1, y: 6, level: 1, placedAt: now, variant: 0 },
-      { id: 'b13', typeId: 'library', x: 6, y: 6, level: 1, placedAt: now, variant: 0 },
-      { id: 'b14', typeId: 'school', x: 1, y: 8, level: 1, placedAt: now, variant: 0 },
-      { id: 'b15', typeId: 'cafe', x: 3, y: 8, level: 1, placedAt: now, variant: 0 },
-      { id: 'b16', typeId: 'shrub', x: 4, y: 2, level: 1, placedAt: now, variant: 0 },
-      { id: 'b17', typeId: 'bench', x: 2, y: 7, level: 1, placedAt: now, variant: 0 },
-      { id: 'b18', typeId: 'rock', x: 7, y: 3, level: 1, placedAt: now, variant: 0 },
-      { id: 'b19', typeId: 'gym', x: 5, y: 8, level: 1, placedAt: now, variant: 0 },
-      { id: 'b20', typeId: 'fountain', x: 2, y: 5, level: 1, placedAt: now, variant: 0 },
+      { id: 'b1', typeId: 'cabin', x: 3, y: 2, level: 2, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b2', typeId: 'house', x: 4, y: 3, level: 1, placedAt: now, variant: 1, rotation: 0 },
+      { id: 'b3', typeId: 'house', x: 2, y: 4, level: 3, placedAt: now, variant: 2, rotation: 0 },
+      { id: 'b4', typeId: 'tree', x: 5, y: 2, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b5', typeId: 'tree', x: 1, y: 2, level: 1, placedAt: now, variant: 1, rotation: 0 },
+      { id: 'b6', typeId: 'pine', x: 6, y: 5, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b7', typeId: 'road', x: 3, y: 5, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b8', typeId: 'road', x: 4, y: 5, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b9', typeId: 'road', x: 5, y: 5, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b10', typeId: 'lamp', x: 3, y: 6, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b11', typeId: 'shop', x: 5, y: 3, level: 2, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b12', typeId: 'park', x: 1, y: 6, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b13', typeId: 'library', x: 6, y: 6, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b14', typeId: 'school', x: 1, y: 8, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b15', typeId: 'cafe', x: 3, y: 8, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b16', typeId: 'shrub', x: 4, y: 2, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b17', typeId: 'bench', x: 2, y: 7, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b18', typeId: 'rock', x: 7, y: 3, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b19', typeId: 'gym', x: 5, y: 8, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b20', typeId: 'fountain', x: 2, y: 5, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b21', typeId: 'lake', x: 7, y: 7, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b22', typeId: 'factory', x: 8, y: 1, level: 1, placedAt: now, variant: 0, rotation: 0 },
+      { id: 'b23', typeId: 'house', x: 8, y: 4, level: 1, placedAt: now, variant: 3, rotation: 0 },
+      { id: 'b24', typeId: 'tree', x: 9, y: 6, level: 1, placedAt: now, variant: 2, rotation: 0 },
     ];
     for (const b of buildings) store.put(b);
     await new Promise<void>((resolve) => {
@@ -145,10 +149,14 @@ async function main() {
   const mctx = await browser.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 3 });
   const mpage = await mctx.newPage();
   await mpage.goto(BASE);
-  await mpage.waitForTimeout(1000);
+  await mpage.waitForTimeout(800);
+  await bootstrap(mpage);
+  await seedCity(mpage);
+  await mpage.reload();
+  await mpage.waitForTimeout(1400);
   await shot(mpage, 'city-mobile');
   await mpage.goto(`${BASE}/#/tasks`);
-  await mpage.waitForTimeout(700);
+  await mpage.waitForTimeout(800);
   await shot(mpage, 'tasks-mobile');
   await mctx.close();
 

@@ -7,13 +7,14 @@ import {
   Hammer,
   Info,
   Plus,
+  RotateCw,
   Trash2,
   X,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { buildingType } from '../config/buildings';
 import { CostTag, ResourceIcon, UpgradeCostTag } from './ui';
-import { sellValue } from '../lib/grid';
+import { canRotate, effectiveSize, sellValue } from '../lib/grid';
 
 export default function BuildingPanel() {
   const buildings = useStore((s) => s.buildings);
@@ -21,6 +22,7 @@ export default function BuildingPanel() {
   const selectBuilding = useStore((s) => s.selectBuilding);
   const profile = useStore((s) => s.profile);
   const upgradeBuilding = useStore((s) => s.upgradeBuilding);
+  const rotateBuilding = useStore((s) => s.rotateBuilding);
   const sellBuilding = useStore((s) => s.sellBuilding);
   const setToast = useStore((s) => s.setToast);
   const navigate = useNavigate();
@@ -81,13 +83,14 @@ export default function BuildingPanel() {
               <div className="rounded-lg bg-slate-50 py-1.5">
                 <div className="text-[10px] text-slate-400">占地</div>
                 <div className="text-xs font-bold text-slate-700">
-                  {type.size.w}×{type.size.h}
+                  {effectiveSize(type, selected.rotation ?? 0).w}×
+                  {effectiveSize(type, selected.rotation ?? 0).h}
                 </div>
               </div>
               <div className="rounded-lg bg-slate-50 py-1.5">
-                <div className="text-[10px] text-slate-400">位置</div>
+                <div className="text-[10px] text-slate-400">朝向</div>
                 <div className="text-xs font-bold text-slate-700">
-                  {selected.x},{selected.y}
+                  {(selected.rotation ?? 0) * 90}°
                 </div>
               </div>
               <div className="rounded-lg bg-slate-50 py-1.5">
@@ -119,6 +122,20 @@ export default function BuildingPanel() {
             )}
 
             <div className="mt-2.5 flex gap-2">
+              {canRotate(type) && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const r = await rotateBuilding(selected.id);
+                    setToast(r.message, r.ok ? 'ok' : 'error');
+                  }}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                  aria-label="旋转建筑"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  旋转
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => navigate('/buildings')}

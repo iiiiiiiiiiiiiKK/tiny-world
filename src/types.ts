@@ -82,7 +82,9 @@ export type BuildingShape =
   | 'statue'
   | 'bench'
   | 'lamp'
-  | 'road';
+  | 'road'
+  | 'lake'
+  | 'factory';
 
 export interface BuildingArt {
   shape: BuildingShape;
@@ -125,6 +127,8 @@ export interface BuildingInstance {
   level: number;
   placedAt: number;
   variant: number;
+  /** 旋转：0=0°, 1=90°, 2=180°, 3=270°。奇数旋转会交换占地宽高。 */
+  rotation: 0 | 1 | 2 | 3;
 }
 
 export interface CityEvent {

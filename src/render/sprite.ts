@@ -14,6 +14,10 @@ export interface SpriteContext {
   scale: number;
   /** 建筑变体（0-3），用于制造细微差异 */
   variant: number;
+  /** 水平镜像（旋转 90°/270° 时使用） */
+  flipX?: boolean;
+  /** 垂直镜像（旋转 180° 时与 flipX 同时使用） */
+  flipY?: boolean;
 }
 
 /** 画一个像素方块（带可选高光/阴影） */
@@ -333,6 +337,8 @@ function drawDetail(c: SpriteContext, art: BuildingArt, halfW: number, wallTop: 
 
 /**
  * 绘制一个建筑。halfW 为建筑底面菱形半宽（像素）。
+ * 若 SpriteContext 上设置了 flipX / flipY，会在局部坐标系里做镜像，
+ * 从而用同一套像素素材表现 4 个朝向。
  */
 export function drawBuilding(
   c: SpriteContext,
@@ -341,6 +347,14 @@ export function drawBuilding(
 ) {
   const { ctx } = c;
   ctx.save();
+
+  if (c.flipX || c.flipY) {
+    const sx = c.flipX ? -1 : 1;
+    const sy = c.flipY ? -1 : 1;
+    ctx.translate(c.originX, c.originY);
+    ctx.scale(sx, sy);
+    ctx.translate(-c.originX, -c.originY);
+  }
 
   switch (art.shape as BuildingShape) {
     case 'box': {
@@ -434,6 +448,52 @@ export function drawBuilding(
       // 一格石板路
       isoTile(c, 0, 0, halfW, art.roof, art.roofDark, art.roofDark, 1);
       px(c, -halfW * 0.5, -1, halfW, 1, art.trim);
+      break;
+    }
+    case 'lake': {
+      // 水面：菱形水域 + 波纹反光
+      isoTile(c, 0, 0, halfW, art.roof, art.roofDark, art.wallDark, 2);
+      // 若干像素波光
+      const waves: [number, number, number][] = [
+        [-halfW * 0.55, -2, 6],
+        [-halfW * 0.1, 1, 8],
+        [halfW * 0.15, -4, 5],
+        [-halfW * 0.35, 3, 4],
+        [halfW * 0.3, 2, 5],
+      ];
+      for (const [wx, wy, ww] of waves) {
+        px(c, wx, wy, ww, 1, art.wall);
+      }
+      // 岸边浅色
+      px(c, -halfW * 0.7, -halfW * 0.35, halfW * 1.4, 1, art.trim);
+      break;
+    }
+    case 'factory': {
+      const h = art.height;
+      isoBlock(c, 0, 0, halfW, h, art.roof, art.wall, art.wallDark);
+      px(c, -halfW, -h, halfW, 1, shade(art.wall, 18));
+      // 锯齿屋顶
+      const steps = Math.max(2, Math.round(halfW / 5));
+      for (let i = 0; i < steps; i++) {
+        const sx = -halfW + (i * halfW * 2) / steps;
+        px(c, sx, -h - 3, (halfW * 2) / steps - 1, 3, art.trim);
+        px(c, sx, -h - 3, (halfW * 2) / steps - 1, 1, art.roofDark);
+      }
+      // 窗户排
+      const winRows = 2;
+      for (let r = 0; r < winRows; r++) {
+        for (let i = 0; i < 4; i++) {
+          const wx = -halfW * 0.8 + (i * halfW * 1.6) / 4;
+          px(c, wx, -h + 5 + r * 6, Math.max(2, halfW * 0.22), 3, art.accent);
+        }
+      }
+      // 两根烟囱 + 白烟
+      px(c, halfW * 0.45, -h - 12, 3, 10, art.wallDark);
+      px(c, halfW * 0.45, -h - 12, 3, 1, art.trim);
+      px(c, -halfW * 0.55, -h - 9, 3, 7, art.wallDark);
+      px(c, -halfW * 0.55, -h - 9, 3, 1, art.trim);
+      px(c, halfW * 0.4, -h - 16, 4, 3, 'rgba(240,244,248,0.85)');
+      px(c, -halfW * 0.6, -h - 13, 4, 3, 'rgba(240,244,248,0.7)');
       break;
     }
     default:

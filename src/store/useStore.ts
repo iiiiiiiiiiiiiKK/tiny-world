@@ -24,9 +24,11 @@ import {
 import { EVENT_TEMPLATES } from '../config/events';
 import { buildingType } from '../config/buildings';
 import {
+  type Rotation,
   addResources,
   canPlace,
   conflictsWith,
+  nextRotation,
   sellValue,
   subtractResources,
   upgradeCostFor,
@@ -70,8 +72,14 @@ interface StoreState {
   completeTask: (taskId: string) => Promise<{ ok: boolean; message: string; reward?: TaskReward; event?: CityEvent }>;
   undoTask: (completionId: string) => Promise<void>;
 
-  placeBuilding: (typeId: string, x: number, y: number) => Promise<{ ok: boolean; message: string }>;
+  placeBuilding: (
+    typeId: string,
+    x: number,
+    y: number,
+    rotation?: Rotation,
+  ) => Promise<{ ok: boolean; message: string }>;
   moveBuilding: (id: string, x: number, y: number) => Promise<{ ok: boolean; message: string }>;
+  rotateBuilding: (id: string) => Promise<{ ok: boolean; message: string }>;
   upgradeBuilding: (id: string) => Promise<{ ok: boolean; message: string }>;
   sellBuilding: (id: string) => Promise<{ ok: boolean; message: string }>;
   selectBuilding: (id: string | null) => void;
@@ -498,12 +506,12 @@ export const useStore = create<StoreState>((set, get) => ({
     }));
   },
 
-  async placeBuilding(typeId, x, y) {
+  async placeBuilding(typeId, x, y, rotation = 0) {
     const s = get();
     const type = buildingType(typeId);
     if (!type) return { ok: false, message: '未知建筑' };
     const extent = LEVELS.find((l) => l.level === s.profile.level)?.extent ?? 6;
-    if (!canPlace(s.buildings, { typeId, x, y }, extent)) {
+    if (!canPlace(s.buildings, { typeId, x, y, rotation }, extent)) {
       return { ok: false, message: '这个位置放不下（超出范围或与已有建筑重叠）' };
     }
     if (s.profile.resources.coins < (type.cost.coins ?? 0) ||
@@ -521,6 +529,7 @@ export const useStore = create<StoreState>((set, get) => ({
       level: 1,
       placedAt: Date.now(),
       variant: Math.floor(Math.random() * 4),
+      rotation,
     };
     const after = [...before, instance];
     const nextProfile: Profile = {
@@ -548,7 +557,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const b = s.buildings.find((v) => v.id === id);
     if (!b) return { ok: false, message: '建筑不存在' };
     const extent = LEVELS.find((l) => l.level === s.profile.level)?.extent ?? 6;
-    if (!canPlace(s.buildings, { typeId: b.typeId, x, y }, extent, id)) {
+    if (!canPlace(s.buildings, { typeId: b.typeId, x, y, rotation: b.rotation ?? 0 }, extent, id)) {
       return { ok: false, message: '这里放不下' };
     }
     const before = s.buildings;
@@ -560,6 +569,32 @@ export const useStore = create<StoreState>((set, get) => ({
       future: [],
     }));
     return { ok: true, message: '已移动' };
+  },
+
+  async rotateBuilding(id) {
+    const s = get();
+    const b = s.buildings.find((v) => v.id === id);
+    if (!b) return { ok: false, message: '建筑不存在' };
+    const type = buildingType(b.typeId);
+    if (!type) return { ok: false, message: '未知建筑' };
+    const from = (b.rotation ?? 0) as Rotation;
+    const to = nextRotation(type, from);
+    if (to === from) {
+      return { ok: false, message: '这个建筑是正方形占地，旋转没有区别' };
+    }
+    const extent = LEVELS.find((l) => l.level === s.profile.level)?.extent ?? 6;
+    if (!canPlace(s.buildings, { typeId: b.typeId, x: b.x, y: b.y, rotation: to }, extent, id)) {
+      return { ok: false, message: '旋转后放不下，周围没有足够空间' };
+    }
+    const before = s.buildings;
+    const after = before.map((v) => (v.id === id ? { ...v, rotation: to } : v));
+    await db.buildings.update(id, { rotation: to });
+    set((st) => ({
+      buildings: after,
+      past: [...st.past, { label: `旋转 ${type.name}`, before, after }].slice(-50),
+      future: [],
+    }));
+    return { ok: true, message: `已旋转到 ${to * 90}°` };
   },
 
   async upgradeBuilding(id) {

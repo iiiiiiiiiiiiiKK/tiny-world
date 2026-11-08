@@ -35,9 +35,33 @@ describe('building catalog', () => {
       'museum',
       'stadium',
       'plaza',
+      // 任务书要求但初版缺失的建筑
+      'factory',
+      'lake',
     ];
     for (const id of required) {
       expect(buildingType(id), `missing building: ${id}`).toBeDefined();
+    }
+  });
+
+  it('covers all building kinds listed in the product spec', () => {
+    // 作品规格中列举的城市元素：房屋/道路/树木/公园/商店/学校/图书馆/工厂/湖泊/装饰物
+    const specElements = {
+      房屋: ['cabin', 'house'],
+      道路: ['road'],
+      树木: ['tree', 'pine'],
+      公园: ['park'],
+      商店: ['shop'],
+      学校: ['school'],
+      图书馆: ['library'],
+      工厂: ['factory'],
+      湖泊: ['lake'],
+      装饰物: ['shrub', 'rock', 'fountain', 'statue', 'bench', 'lamp'],
+    };
+    for (const [label, ids] of Object.entries(specElements)) {
+      for (const id of ids) {
+        expect(buildingType(id), `${label} → ${id}`).toBeDefined();
+      }
     }
   });
 

@@ -4,9 +4,12 @@ import {
   TILE_W,
   addResources,
   canPlace,
+  canRotate,
   cellToScreen,
   conflictsWith,
+  effectiveSize,
   footprint,
+  nextRotation,
   resourcesSatisfy,
   screenToCell,
   sellValue,
@@ -18,7 +21,7 @@ import { buildingType } from '../config/buildings';
 import type { BuildingInstance } from '../types';
 
 function b(typeId: string, x: number, y: number, id = `${typeId}-${x}-${y}`): BuildingInstance {
-  return { id, typeId, x, y, level: 1, placedAt: 0, variant: 0 };
+  return { id, typeId, x, y, level: 1, placedAt: 0, variant: 0, rotation: 0 };
 }
 
 describe('grid footprint', () => {
@@ -108,8 +111,66 @@ describe('upgrade & sell economics', () => {
   });
 });
 
-describe('isometric projection', () => {
-  it('round-trips cell ↔ screen exactly', () => {
+describe('rotation', () => {
+  it('only non-square buildings can rotate', () => {
+    expect(canRotate(buildingType('cabin')!)).toBe(false); // 1×1
+    expect(canRotate(buildingType('shop')!)).toBe(true); // 2×1
+    expect(canRotate(buildingType('tech')!)).toBe(true); // 3×2
+  });
+
+  it('odd rotations swap width and height', () => {
+    const shop = buildingType('shop')!; // 2×1
+    expect(effectiveSize(shop, 0)).toEqual({ w: 2, h: 1 });
+    expect(effectiveSize(shop, 1)).toEqual({ w: 1, h: 2 });
+    expect(effectiveSize(shop, 2)).toEqual({ w: 2, h: 1 });
+    expect(effectiveSize(shop, 3)).toEqual({ w: 1, h: 2 });
+  });
+
+  it('footprint respects rotation', () => {
+    const shop = buildingType('shop')!;
+    expect(footprint(shop, 0, 0, 0)).toHaveLength(2);
+    expect(footprint(shop, 0, 0, 1)).toHaveLength(2);
+    // 旋转 90° 后是竖直的两格
+    expect(footprint(shop, 0, 0, 1)).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 1 },
+    ]);
+  });
+
+  it('rotated footprint changes collision results', () => {
+    const shop = buildingType('shop')!;
+    const list = [b('shop', 0, 0)]; // 占 (0,0)(1,0)
+    // 目标格 (0,1)：未旋转时 2×1 会占 (0,1)(1,1) 不冲突
+    expect(conflictsWith(list, { typeId: 'shop', x: 0, y: 1, rotation: 0 })).toBe(false);
+    // 旋转 90° 后是 1×2 占 (0,1)(0,2)，也不冲突
+    expect(conflictsWith(list, { typeId: 'shop', x: 0, y: 1, rotation: 1 })).toBe(false);
+    // 但放到 (1,0) 旋转 90° 会占 (1,0)(1,1)，与 (1,0) 冲突
+    expect(conflictsWith(list, { typeId: 'shop', x: 1, y: 0, rotation: 1 })).toBe(true);
+    void shop;
+  });
+
+  it('rotation cycling wraps 0→1→2→3→0', () => {
+    const shop = buildingType('shop')!;
+    expect(nextRotation(shop, 0)).toBe(1);
+    expect(nextRotation(shop, 1)).toBe(2);
+    expect(nextRotation(shop, 2)).toBe(3);
+    expect(nextRotation(shop, 3)).toBe(0);
+  });
+
+  it('square buildings never rotate', () => {
+    const cabin = buildingType('cabin')!;
+    expect(nextRotation(cabin, 0)).toBe(0);
+  });
+
+  it('rotated placement respects extent bounds', () => {
+    // 3×2 科技中心旋转后在 6 格边界内仍然受限
+    expect(canPlace([], { typeId: 'tech', x: 4, y: 0, rotation: 0 }, 6)).toBe(false);
+    expect(canPlace([], { typeId: 'tech', x: 0, y: 4, rotation: 1 }, 6)).toBe(false);
+    expect(canPlace([], { typeId: 'tech', x: 4, y: 0, rotation: 1 }, 6)).toBe(true);
+  });
+});
+
+describe('isometric projection', () => {  it('round-trips cell ↔ screen exactly', () => {
     for (const [cx, cy] of [
       [0, 0],
       [3, 5],

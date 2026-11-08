@@ -4,6 +4,7 @@ import { db } from './db';
 import { useStore } from '../store/useStore';
 import { toDateKey, periodKey } from '../lib/date';
 import { buildingType } from '../config/buildings';
+import { canPlace } from '../lib/grid';
 
 async function freshStore() {
   await db.delete();
@@ -192,6 +193,183 @@ describe('building lifecycle', () => {
     expect(useStore.getState().buildings).toHaveLength(0);
     useStore.getState().redo();
     expect(useStore.getState().buildings).toHaveLength(1);
+  });
+});
+
+describe('city level progression', () => {
+  it('levels up when xp crosses a threshold', async () => {
+    await freshStore();
+    // 直接给到接近 Lv.2 的经验
+    const st = useStore.getState();
+    const boosted = { ...st.profile, xp: 115 };
+    await db.meta.put({ id: 'profile', value: boosted });
+    useStore.setState({ profile: boosted });
+
+    await useStore.getState().createTask({
+      name: '升级测试',
+      description: '',
+      category: 'study',
+      repeatType: 'daily',
+      repeatDays: [],
+      reward: { coins: 5, wood: 0, stone: 0, xp: 20 },
+      startDate: null,
+      dueDate: null,
+    });
+    const task = useStore.getState().tasks.find((t) => t.name === '升级测试')!;
+    expect(useStore.getState().profile.level).toBe(1);
+
+    await useStore.getState().completeTask(task.id);
+    expect(useStore.getState().profile.xp).toBeGreaterThanOrEqual(120);
+    expect(useStore.getState().profile.level).toBe(2);
+  });
+
+  it('level unlocks a larger buildable area', async () => {
+    await freshStore();
+    // Lv.1 只有 6×6，坐标 (6,0) 不可放置
+    expect((await useStore.getState().placeBuilding('road', 6, 0)).ok).toBe(false);
+
+    const st = useStore.getState();
+    const lv3 = { ...st.profile, xp: 320, level: 3 };
+    await db.meta.put({ id: 'profile', value: lv3 });
+    useStore.setState({ profile: lv3 });
+
+    // Lv.3 扩展到 10×10，(6,0) 现在可以放置
+    expect((await useStore.getState().placeBuilding('road', 6, 0)).ok).toBe(true);
+  });
+
+  it('never loses buildings or level when a day is missed', async () => {
+    await freshStore();
+    await useStore.getState().placeBuilding('cabin', 0, 0);
+    const st = useStore.getState();
+    const old = { ...st.profile, xp: 400, level: 3, streak: 5, lastActiveDate: '2026-01-01' };
+    await db.meta.put({ id: 'profile', value: old });
+    useStore.setState({ profile: old });
+
+    // 模拟过了很久没有活跃：重载数据
+    await useStore.getState().init();
+    expect(useStore.getState().profile.level).toBe(3);
+    expect(useStore.getState().buildings).toHaveLength(1);
+  });
+});
+
+describe('daily period reset', () => {
+  it('allows completing the same daily task again on a new period', async () => {
+    await freshStore();
+    await useStore.getState().createTask({
+      name: '每日重置',
+      description: '',
+      category: 'habit',
+      repeatType: 'daily',
+      repeatDays: [],
+      reward: { coins: 5, wood: 1, stone: 0, xp: 5 },
+      startDate: null,
+      dueDate: null,
+    });
+    const task = useStore.getState().tasks.find((t) => t.name === '每日重置')!;
+
+    // 今天的周期键已被占用
+    const todayKey = periodKey('daily', toDateKey());
+    await db.completions.add({
+      id: `${task.id}::${todayKey}`,
+      taskId: task.id,
+      periodKey: todayKey,
+      completedAt: Date.now(),
+      reward: task.reward,
+    });
+    expect((await useStore.getState().completeTask(task.id)).ok).toBe(false);
+
+    // 换到「昨天」的周期键：不同主键，应当可以完成
+    const { addDays } = await import('../lib/date');
+    const yesterdayKey = periodKey('daily', addDays(toDateKey(), -1));
+    expect(yesterdayKey).not.toBe(todayKey);
+    const fakeId = `${task.id}_otherperiod`;
+    await db.completions.delete(`${task.id}::${todayKey}`);
+    await db.completions.add({
+      id: fakeId,
+      taskId: task.id,
+      periodKey: yesterdayKey,
+      completedAt: Date.now(),
+      reward: task.reward,
+    });
+    // 今天这个周期仍可完成（昨天那条不阻塞今天）
+    expect((await useStore.getState().completeTask(task.id)).ok).toBe(true);
+  });
+
+  it('weekly task stays blocked within the same ISO week', async () => {
+    await freshStore();
+    await useStore.getState().createTask({
+      name: '每周任务',
+      description: '',
+      category: 'reading',
+      repeatType: 'weekly',
+      repeatDays: [],
+      reward: { coins: 20, wood: 2, stone: 0, xp: 20 },
+      startDate: null,
+      dueDate: null,
+    });
+    const task = useStore.getState().tasks.find((t) => t.name === '每周任务')!;
+    expect((await useStore.getState().completeTask(task.id)).ok).toBe(true);
+    expect((await useStore.getState().completeTask(task.id)).ok).toBe(false);
+  });
+});
+
+describe('building rotation', () => {
+  it('rotates a 2×1 shop so its footprint becomes vertical', async () => {
+    await freshStore();
+    const st = useStore.getState();
+    const rich = { ...st.profile, resources: { coins: 999, wood: 999, stone: 999 } };
+    await db.meta.put({ id: 'profile', value: rich });
+    useStore.setState({ profile: rich });
+
+    const r = await useStore.getState().placeBuilding('shop', 2, 2, 0);
+    expect(r.ok).toBe(true);
+    const shop = useStore.getState().buildings[0];
+    expect(shop.rotation).toBe(0);
+
+    const rot = await useStore.getState().rotateBuilding(shop.id);
+    expect(rot.ok).toBe(true);
+    expect(useStore.getState().buildings[0].rotation).toBe(1);
+  });
+
+  it('refuses to rotate a square building', async () => {
+    await freshStore();
+    await useStore.getState().placeBuilding('cabin', 0, 0);
+    const cabin = useStore.getState().buildings[0];
+    const r = await useStore.getState().rotateBuilding(cabin.id);
+    expect(r.ok).toBe(false);
+    expect(useStore.getState().buildings[0].rotation).toBe(0);
+  });
+});
+
+describe('performance with many buildings', () => {
+  it('validates placement quickly with 200 buildings', async () => {
+    await freshStore();
+    const st = useStore.getState();
+    const rich = { ...st.profile, resources: { coins: 99999, wood: 99999, stone: 99999 } };
+    await db.meta.put({ id: 'profile', value: rich });
+    useStore.setState({ profile: rich });
+
+    // 直接批量写入 200 座小建筑（绕过逐个扣费的开销）
+    const many = Array.from({ length: 200 }, (_, i) => ({
+      id: `perf_${i}`,
+      typeId: 'tree',
+      x: i % 10,
+      y: Math.floor(i / 10) % 10,
+      level: 1,
+      placedAt: Date.now(),
+      variant: 0,
+      rotation: 0 as const,
+    }));
+    await db.buildings.bulkPut(many);
+    useStore.setState({ buildings: many });
+
+    const t0 = performance.now();
+    for (let i = 0; i < 200; i++) {
+      canPlace(many, { typeId: 'cabin', x: i % 10, y: Math.floor(i / 10) % 10 }, 10);
+    }
+    const elapsed = performance.now() - t0;
+    // 200 次全量碰撞检测应远低于 500ms（人眼感知阈值）
+    expect(elapsed).toBeLessThan(500);
   });
 });
 
